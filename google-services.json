@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "941488007971",
+    "project_id": "food-app-77d74",
+    "storage_bucket": "food-app-77d74.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:941488007971:android:c55fd616fe6d77022dfa96",
+        "android_client_info": {
+          "package_name": "com.sagarguptaofiicial.khaopiyo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBGSBndqPaqnGjEVm1_Zqku4uRUVQLRehg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
