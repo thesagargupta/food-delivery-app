@@ -11,12 +11,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
+  ScrollView, // Import ScrollView
 } from 'react-native';
 import { router } from 'expo-router';
 import { colors, spacing, typography } from '../styles';
 import { auth } from '../config/firebase';
 import { signInWithPhoneNumber, RecaptchaVerifier, PhoneAuthProvider, signInWithCredential } from 'firebase/auth';
 import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+
 // Native (Android/iOS) will use @react-native-firebase/auth for invisible verification (SafetyNet / Play Integrity / silent reCAPTCHA)
 let authNative = null;
 if (Platform.OS !== 'web') {
@@ -160,10 +162,9 @@ const LoginScreen = () => {
   const placeholderTextColor = isDarkMode ? colors.gray[500] : colors.gray[400];
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: isDarkMode ? colors.dark : colors.light }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    // FIX: Use a standard View as the root container instead of KeyboardAvoidingView.
+    // This prevents the entire layout from resizing when the keyboard appears.
+    <View style={{ flex: 1, backgroundColor: isDarkMode ? colors.dark : colors.light }}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <Animated.Image source={{ uri: carouselImages[activeIndex] }} style={[styles.heroImage, { opacity }]} />
 
@@ -175,84 +176,110 @@ const LoginScreen = () => {
           attemptInvisibleVerification
         />
       )}
-      {/* Web-only invisible Recaptcha target (DOM div) */}
 
+      {/* The card now maintains its size because its parent (the root View) doesn't shrink. */}
       <View style={[styles.card, { backgroundColor: cardBackgroundColor }]}>
-        <Text style={[typography.h2, { marginBottom: spacing.sm, textAlign: 'center', color: textColor }]}>
-          Your Personal Food-Court
-        </Text>
-        <Text style={[typography.body, { color: colors.gray[500], textAlign: 'center', marginBottom: spacing.lg }]}>
-          Let&apos;s get started
-        </Text>
+        {/* FIX: KeyboardAvoidingView is now inside the card, only affecting the form content. */}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+        >
+          {/* FIX: ScrollView allows content to scroll if the keyboard covers it, without shrinking the container. */}
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.scrollContainer}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* This wrapper helps in structuring the content within the ScrollView */}
+            <View>
+              <Text style={[typography.h2, { marginBottom: spacing.sm, textAlign: 'center', color: textColor }]}>
+                Your Personal Food-Court
+              </Text>
+              <Text style={[typography.body, { color: colors.gray[500], textAlign: 'center', marginBottom: spacing.lg }]}>
+                Let&apos;s get started
+              </Text>
 
-  <View id="recaptcha-container"></View>
+              {/* Web-only invisible Recaptcha target (DOM div) */}
+              <View id="recaptcha-container"></View>
 
-        {step === 'phone' ? (
-          <>
-            <View style={[styles.phoneRow, { backgroundColor: isDarkMode ? colors.gray[800] : colors.gray[100] }]}>
-              <Text style={{ fontSize: 16, marginRight: spacing.sm, color: textColor }}>+91</Text>
-              <TextInput
-                style={[styles.input, { color: textColor }]}
-                placeholder="Enter your phone number"
-                placeholderTextColor={placeholderTextColor}
-                keyboardType="phone-pad"
-                value={phone}
-                onChangeText={setPhone}
-                maxLength={10}
-              />
+              {step === 'phone' ? (
+                <>
+                  <View style={[styles.phoneRow, { backgroundColor: isDarkMode ? colors.gray[800] : colors.gray[100] }]}>
+                    <Text style={{ fontSize: 16, marginRight: spacing.sm, color: textColor }}>+91</Text>
+                    <TextInput
+                      style={[styles.input, { color: textColor }]}
+                      placeholder="Enter your phone number"
+                      placeholderTextColor={placeholderTextColor}
+                      keyboardType="phone-pad"
+                      value={phone}
+                      onChangeText={setPhone}
+                      maxLength={10}
+                    />
+                  </View>
+
+                  <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={sendOtp} disabled={loading}>
+                    <Text style={styles.btnText}>{loading ? 'Sending...' : 'Continue'}</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Text style={{ marginBottom: spacing.sm, color: textColor, textAlign: 'center' }}>
+                    Enter the 6-digit OTP sent to +91 {phone}
+                  </Text>
+                  <TextInput
+                    ref={otpInputRef}
+                    style={[styles.otpInput, { color: textColor, borderColor: isDarkMode ? colors.gray[700] : colors.gray[200] }]}
+                    placeholder="------"
+                    placeholderTextColor={placeholderTextColor}
+                    keyboardType="number-pad"
+                    value={otp}
+                    onChangeText={setOtp}
+                    maxLength={6}
+                  />
+
+                  <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={verifyOtp} disabled={loading}>
+                    <Text style={styles.btnText}>{loading ? 'Verifying...' : 'Verify & Proceed'}</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity onPress={() => { setStep('phone'); setOtp(''); setVerificationId(null); }} style={{ marginTop: spacing.md }}>
+                    <Text style={{ color: colors.primary, textAlign: 'center' }}>Use another number</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
 
-            <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={sendOtp} disabled={loading}>
-              <Text style={styles.btnText}>{loading ? 'Sending...' : 'Continue'}</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <Text style={{ marginBottom: spacing.sm, color: textColor, textAlign: 'center' }}>
-              Enter the 6-digit OTP sent to +91 {phone}
+            <Text style={[styles.lowerText, { textAlign: 'center', color: colors.gray[500]}]}>
+              By continuing, you agree to our Terms of Service and Privacy Policy
             </Text>
-            <TextInput
-              ref={otpInputRef}
-              style={[styles.otpInput, { color: textColor, borderColor: isDarkMode ? colors.gray[700] : colors.gray[200] }]}
-              placeholder="------"
-              placeholderTextColor={placeholderTextColor}
-              keyboardType="number-pad"
-              value={otp}
-              onChangeText={setOtp}
-              maxLength={6}
-            />
-
-            <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={verifyOtp} disabled={loading}>
-              <Text style={styles.btnText}>{loading ? 'Verifying...' : 'Verify & Proceed'}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => { setStep('phone'); setOtp(''); setVerificationId(null); }} style={{ marginTop: spacing.md }}>
-              <Text style={{ color: colors.primary, textAlign: 'center' }}>Use another number</Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        <Text style={{ textAlign: 'center', color: colors.gray[500], marginTop: spacing.xl }}>
-          By continuing, you agree to our Terms of Service and Privacy Policy
-        </Text>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  lowerText: {marginBottom: 100 },
   heroImage: { width: '100%', height: '45%', resizeMode: 'cover' },
   card: {
     flex: 1,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     marginTop: -24,
-    padding: spacing.lg,
     elevation: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
+    overflow: 'hidden', // Ensures content inside respects the border radius.
+  },
+  // FIX: New style for the ScrollView's content.
+  scrollContainer: {
+    flexGrow: 1,
+    padding: spacing.lg,
+    justifyContent: 'space-between', // Pushes the 'Terms of Service' text to the bottom.
   },
   phoneRow: {
     flexDirection: 'row',
