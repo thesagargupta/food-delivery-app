@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   ScrollView,
   StatusBar,
@@ -11,6 +11,7 @@ import {
   Modal,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +19,11 @@ import { Card, Header, Button } from '../components';
 import { colors, spacing, typography } from '../styles';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
+import { auth, db } from '../config/firebase';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const PROFILE_CACHE_KEY = '@profile_cache';
 
 const ProfileScreen = () => {
   const isDarkMode = useColorScheme() === 'dark';
@@ -28,18 +34,68 @@ const ProfileScreen = () => {
     backgroundColor: isDarkMode ? colors.dark : colors.light,
   };
 
-  // Local profile state (static, will wire backend later)
+  const user = auth.currentUser;
   const [profile, setProfile] = useState({
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    phone: '+91 98765 43210',
-    image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&q=80',
+    name: '',
+    email: user?.email || '',
+    phone: user?.phoneNumber || '',
+    image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=150&q=80',
   });
 
   const [editVisible, setEditVisible] = useState(false);
-  const [nameInput, setNameInput] = useState(profile.name);
-  const [emailInput, setEmailInput] = useState(profile.email);
-  const [imageInput, setImageInput] = useState(profile.image);
+  const [nameInput, setNameInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [imageInput, setImageInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const fetchUserProfile = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      console.log("User not logged in.");
+      return;
+    }
+
+    // Load from cache first
+    try {
+      const cachedProfile = await AsyncStorage.getItem(PROFILE_CACHE_KEY);
+      if (cachedProfile) {
+        const parsedProfile = JSON.parse(cachedProfile);
+        // Check if cached data is for the current user
+        if (parsedProfile.uid === user.uid) {
+          setProfile(parsedProfile.data);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load profile from cache', e);
+    }
+
+    // Fetch from Firestore
+    const userRef = doc(db, "users", user.uid);
+    try {
+      const docSnap = await getDoc(userRef);
+      if (docSnap.exists()) {
+        const userData = docSnap.data();
+        const freshProfile = {
+          name: userData.name || '',
+          email: userData.email || user.email || '',
+          phone: user.phoneNumber,
+          image: userData.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=150&q=80',
+        };
+        setProfile(freshProfile);
+        // Cache the new profile data with UID
+        await AsyncStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ uid: user.uid, data: freshProfile }));
+      } else {
+        // For a new user, the profile is already initialized with email and phone.
+        // No need to set state here and cause a re-render.
+      }
+    } catch (error) {
+      console.error("Error fetching user profile from Firestore: ", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUserProfile();
+  }, [fetchUserProfile]);
 
   const openEdit = () => {
     setNameInput(profile.name);
@@ -48,8 +104,8 @@ const ProfileScreen = () => {
     setEditVisible(true);
   };
 
-  const saveProfile = () => {
-    if (!nameInput.trim()) {
+  const saveProfile = async () => {
+    if (!nameInput || !nameInput.trim()) {
       Alert.alert('Validation', 'Name cannot be empty');
       return;
     }
@@ -57,9 +113,37 @@ const ProfileScreen = () => {
       Alert.alert('Validation', 'Please enter a valid email');
       return;
     }
-    setProfile(p => ({ ...p, name: nameInput.trim(), email: emailInput.trim(), image: imageInput.trim() }));
-    setEditVisible(false);
+
+    const user = auth.currentUser;
+    if (user) {
+      setIsSaving(true);
+      try {
+        const userRef = doc(db, "users", user.uid);
+        const updatedProfileData = {
+          name: nameInput ? nameInput.trim() : '',
+          email: emailInput ? emailInput.trim() : '',
+          image: imageInput ? imageInput.trim() : '',
+        };
+        await setDoc(userRef, updatedProfileData, { merge: true });
+
+        const fullProfile = { ...profile, ...updatedProfileData };
+        setProfile(fullProfile);
+        await AsyncStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ uid: user.uid, data: fullProfile }));
+
+        setEditVisible(false);
+        Alert.alert('Success', 'Profile updated successfully!');
+      } catch (error) {
+        console.error("Error saving profile: ", error);
+        Alert.alert('Error', 'Failed to save profile. Please try again.');
+      } finally {
+        setIsSaving(false);
+      }
+    } else {
+      Alert.alert('Error', 'User not authenticated.');
+    }
   };
+
+  
 
   // Image picker helpers
   const pickImage = async (fromCamera = false) => {
@@ -210,8 +294,12 @@ const ProfileScreen = () => {
                   <Text style={styles.cancelText}>Cancel</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.saveBtn} onPress={saveProfile}>
-                  <Text style={styles.saveText}>Save</Text>
+                <TouchableOpacity style={styles.saveBtn} onPress={saveProfile} disabled={isSaving}>
+                  {isSaving ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.saveText}>Save</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
