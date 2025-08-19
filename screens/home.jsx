@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     ScrollView,
     StatusBar,
@@ -11,10 +11,16 @@ import {
     TouchableOpacity,
     FlatList,
     Animated,
+    Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { auth, db } from '../config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
+import { colors, spacing, typography } from '../styles';
 
 const categories = [
     { id: '1', title: 'Offers', icon: 'pricetag', color: '#FF6B35' },
@@ -75,6 +81,125 @@ function HomeScreen() {
     const [bannerVisible, setBannerVisible] = useState(true);
     const bannerAnim = useRef(new Animated.Value(0)).current;
 
+    // Location state
+    const [currentLocation, setCurrentLocation] = useState('Fetching location...');
+    const [locationLoading, setLocationLoading] = useState(true);
+
+    // Profile state for header icon
+    const PROFILE_CACHE_KEY = '@profile_cache';
+    const [profileImage, setProfileImage] = useState('https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=150&q=80');
+    const navigation = useNavigation();
+
+    // Fetch profile image (similar logic to profile.jsx)
+    const fetchProfileImage = useCallback(async () => {
+        const user = auth.currentUser;
+        if (!user) return;
+        // Try cache first
+        try {
+            const cachedProfile = await AsyncStorage.getItem(PROFILE_CACHE_KEY);
+            if (cachedProfile) {
+                const parsedProfile = JSON.parse(cachedProfile);
+                if (parsedProfile.uid === user.uid && parsedProfile.data?.image) {
+                    setProfileImage(parsedProfile.data.image);
+                    return;
+                }
+            }
+        } catch {}
+        // Fetch from Firestore
+        try {
+            const userRef = doc(db, 'users', user.uid);
+            const docSnap = await getDoc(userRef);
+            if (docSnap.exists()) {
+                const userData = docSnap.data();
+                if (userData.image) setProfileImage(userData.image);
+            }
+        } catch {}
+    }, []);
+
+    // Location functions
+    const getCurrentLocation = useCallback(async () => {
+        try {
+            setLocationLoading(true);
+            
+            // First check if we have a saved location from ManualLocationScreen
+            try {
+                const savedLocation = await AsyncStorage.getItem('@user_location');
+                if (savedLocation) {
+                    const locationData = JSON.parse(savedLocation);
+                    // Check if location is not too old (24 hours)
+                    if (Date.now() - locationData.timestamp < 86400000) {
+                        setCurrentLocation(locationData.address);
+                        setLocationLoading(false);
+                        return;
+                    }
+                }
+            } catch (_storageError) {
+                console.log('No saved location found');
+            }
+            
+            // Request location permissions
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert(
+                    'Permission Denied',
+                    'Location permission is required to show your delivery address. You can set it manually.',
+                    [
+                        { text: 'Set Manually', onPress: () => router.push('/ManualLocationScreen') },
+                        { text: 'Try Again', onPress: getCurrentLocation },
+                        { text: 'Cancel', style: 'cancel' }
+                    ]
+                );
+                setCurrentLocation('Set location manually');
+                setLocationLoading(false);
+                return;
+            }
+
+            // Get current position
+            const location = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Balanced,
+            });
+
+            // Reverse geocode to get address
+            const [address] = await Location.reverseGeocodeAsync({
+                latitude: location.coords.latitude,
+                longitude: location.coords.longitude,
+            });
+
+            if (address) {
+                const formattedAddress = `${address.name || ''} ${address.street || ''}, ${address.city || ''}, ${address.region || ''}`.trim();
+                setCurrentLocation(formattedAddress || 'Unknown location');
+            } else {
+                setCurrentLocation('Unable to get address');
+            }
+        } catch (error) {
+            console.error('Location error:', error);
+            Alert.alert(
+                'Location Error',
+                'Unable to get your current location. You can set it manually.',
+                [
+                    { text: 'Set Manually', onPress: () => router.push('/ManualLocationScreen') },
+                    { text: 'Retry', onPress: getCurrentLocation },
+                    { text: 'Cancel', style: 'cancel' }
+                ]
+            );
+            setCurrentLocation('Set location manually');
+        } finally {
+            setLocationLoading(false);
+        }
+    }, [setCurrentLocation, setLocationLoading]);
+
+    useEffect(() => {
+        fetchProfileImage();
+        getCurrentLocation();
+        
+        // Listen for navigation focus to refresh profile image and location
+        const unsubscribe = navigation.addListener('focus', () => {
+            fetchProfileImage();
+            getCurrentLocation();
+        });
+        return unsubscribe;
+    }, [fetchProfileImage, navigation, getCurrentLocation]);
+
     const backgroundStyle = {
         backgroundColor: isDarkMode ? colors.dark : colors.light,
     };
@@ -89,7 +214,7 @@ function HomeScreen() {
                 useNativeDriver: true,
             }).start();
         }
-    }, [bannerVisible]);
+    }, [bannerVisible, bannerAnim]);
 
     const hideBanner = () => {
         Animated.timing(bannerAnim, {
@@ -191,18 +316,63 @@ function HomeScreen() {
                 }
             ]}>
                 <View style={styles.header}>
-                    <View>
-                        <Text style={styles.headerTitle}>Delivering to</Text>
-                        <Text style={[styles.headerSubtitle, { color: isDarkMode ? colors.white : colors.black }]}>Home - Kukas, Rajasthan</Text>
-                    </View>
-                    <TouchableOpacity
-                        style={[styles.profileIcon, { backgroundColor: isDarkMode ? colors.gray[800] : colors.gray[100] }]}
-                        onPress={() => router.push('/profile')}
+                    <TouchableOpacity 
+                        style={styles.locationContainer}
+                        onPress={() => router.push('/ManualLocationScreen')}
+                        activeOpacity={0.7}
                     >
-                        <Ionicons
-                            name="person"
-                            size={20}
-                            color={colors.primary}
+                        <View style={styles.locationTextContainer}>
+                            <View style={styles.titleRow}>
+                                <Text style={styles.headerTitle}>Delivering to</Text>
+                                <Ionicons 
+                                    name="location" 
+                                    size={16} 
+                                    color={colors.primary}
+                                    style={{ marginLeft: 4 }}
+                                />
+                            </View>
+                            <View style={styles.addressRow}>
+                                <Text style={[styles.headerSubtitle, { 
+                                    color: isDarkMode ? colors.white : colors.black,
+                                    flex: 1,
+                                    opacity: locationLoading ? 0.6 : 1
+                                }]}>
+                                    {locationLoading ? 'Fetching location...' : currentLocation}
+                                </Text>
+                                {locationLoading && (
+                                    <Animated.View style={{ 
+                                        marginLeft: 8,
+                                        transform: [{ 
+                                            rotate: bannerAnim.interpolate({
+                                                inputRange: [0, 1],
+                                                outputRange: ['0deg', '360deg']
+                                            })
+                                        }]
+                                    }}>
+                                        <Ionicons 
+                                            name="refresh" 
+                                            size={16} 
+                                            color={isDarkMode ? colors.gray[400] : colors.gray[600]} 
+                                        />
+                                    </Animated.View>
+                                )}
+                            </View>
+                        </View>
+                        <Ionicons 
+                            name="chevron-down" 
+                            size={20} 
+                            color={isDarkMode ? colors.gray[400] : colors.gray[600]} 
+                            style={{ marginLeft: 8 }}
+                        />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.profileIcon, { backgroundColor: isDarkMode ? colors.gray[800] : colors.gray[100], overflow: 'hidden' }]}
+                        onPress={() => router.push('/profile')}
+                        accessibilityLabel="Profile"
+                    >
+                        <Image
+                            source={{ uri: profileImage }}
+                            style={{ width: 40, height: 40, borderRadius: 20 }}
                         />
                     </TouchableOpacity>
                 </View>
@@ -303,49 +473,6 @@ function HomeScreen() {
     );
 }
 
-// You should define your colors and typography in a central file,
-// but for this example, I'll place them here.
-const colors = {
-    primary: '#FF6347', // Tomato Red
-    secondary: '#FFA500', // Orange
-    light: '#F5F5F5', // Light Gray
-    dark: '#121212',
-    white: '#FFFFFF',
-    black: '#000000',
-    gray: {
-        100: '#E5E7EB',
-        300: '#D1D5DB',
-        400: '#9CA3AF',
-        500: '#6B7280',
-        600: '#4B5563',
-        800: '#1F2937',
-    },
-};
-
-const spacing = {
-    sm: 8,
-    md: 16,
-    lg: 24,
-    xl: 32,
-};
-
-const typography = {
-    h1: {
-        fontSize: 28,
-        fontWeight: 'bold',
-    },
-    h2: {
-        fontSize: 22,
-        fontWeight: 'bold',
-    },
-    body: {
-        fontSize: 16,
-    },
-    caption: {
-        fontSize: 12,
-    },
-};
-
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -370,6 +497,23 @@ const styles = StyleSheet.create({
         paddingBottom: spacing.md,
         flexDirection: 'row',
         justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    locationContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        paddingRight: spacing.sm,
+    },
+    locationTextContainer: {
+        flex: 1,
+    },
+    titleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    addressRow: {
+        flexDirection: 'row',
         alignItems: 'center',
     },
     headerTitle: {

@@ -202,7 +202,7 @@ const LoginScreen = () => {
               </Text>
 
               {/* Web-only invisible Recaptcha target (DOM div) */}
-              <View id="recaptcha-container"></View>
+              <View id="recaptcha-container" style={{ position: 'absolute', top: -1000, left: -1000 }}></View>
 
               {step === 'phone' ? (
                 <>

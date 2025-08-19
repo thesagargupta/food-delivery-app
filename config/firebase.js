@@ -5,13 +5,13 @@ import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
 
 // TODO: Replace with your own Firebase configuration
 export const firebaseConfig = {
-  apiKey: "AIzaSyAkuy9aOWHwYp-nT_vrZYR_c8RkZiZqic4",
-  authDomain: "food-app-77d74.firebaseapp.com",
-  projectId: "food-app-77d74",
-  storageBucket: "food-app-77d74.firebasestorage.app",
-  messagingSenderId: "941488007971",
-  appId: "1:941488007971:web:eec28463fdb92b9c2dfa96",
-  measurementId: "G-VPV9MDPN6P",
+  apiKey: "AIzaSyCqZgT5hEJjawtL8AfUUgm-UV3TZEhzyx8",
+  authDomain: "eleve8me-33d62.firebaseapp.com",
+  projectId: "eleve8me-33d62",
+  storageBucket: "eleve8me-33d62.firebasestorage.app",
+  messagingSenderId: "1010671558020",
+  appId: "1:1010671558020:web:27a008b2239b68343f91d1",
+  measurementId: "G-D6JSYR8SZ6"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -19,4 +19,4 @@ export const auth = initializeAuth(app, {
   persistence: getReactNativePersistence(ReactNativeAsyncStorage),
 });
 
-export const db = getFirestore(app, "foodapp");
+export const db = getFirestore(app, "khaopiyo");

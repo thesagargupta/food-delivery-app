@@ -168,8 +168,7 @@ const ProfileScreen = () => {
 
       if (!result.cancelled) {
         const uri = result.assets ? result.assets[0].uri : result.uri;
-        setImageInput(uri);
-        setProfile(p => ({ ...p, image: uri }));
+        setImageInput(uri); // Only update preview, not main profile
       }
     } catch (err) {
       console.warn('Image pick error', err);

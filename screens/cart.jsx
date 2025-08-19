@@ -190,7 +190,16 @@ function CartScreen() {
           </ScrollView>
 
           <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.sm, backgroundColor: isDarkMode ? colors.gray[800] : colors.white }]}>
-            <TouchableOpacity style={styles.checkoutButton} onPress={() => router.push('/OrderConfirmationScreen')}>
+            <TouchableOpacity
+              style={styles.checkoutButton}
+              onPress={() => router.push({
+                pathname: '/OrderConfirmationScreen',
+                params: {
+                  cartData: JSON.stringify(cartItems),
+                  toPay: toPay
+                }
+              })}
+            >
               <View>
                 <Text style={styles.checkoutPrice}>₹{toPay}</Text>
                 <Text style={styles.checkoutLabel}>TOTAL</Text>
